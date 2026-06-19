@@ -1,0 +1,116 @@
+# Signal Vault — Cursor Rules
+
+## Project Context
+Signal Vault is an AI×Web3 hackathon project (Week 2).
+
+**Product direction: 2026 FIFA World Cup Polymarket signal specialist.**
+The product is intentionally narrow — it only tracks Polymarket markets for the
+2026 FIFA World Cup (currently the highest-volume event on Polymarket, >$67M/day).
+Do NOT generalize to arbitrary markets unless the user explicitly asks to.
+
+### Core Loop
+1. `worker` polls World Cup market prices every 60 s via Polymarket CLOB REST API
+2. AI (DeepSeek) scores each price movement: is it signal or noise?
+3. Anomaly events + AI verdict are written to `web/public/snapshot.json`
+4. `web` dashboard shows a live "World Cup Signal Feed" — which market just moved,
+   why it likely moved, and whether the current price looks mis-priced
+
+### Key Differentiator
+AI is a **pricing mechanism**, not a prose summary generator.
+Every AI call must return a structured object:
+```ts
+{
+  verdict: "value" | "noise" | "watch",
+  evScore: number,      // estimated edge vs. current mid, e.g. +0.04 = "4pp underpriced"
+  reasoning: string,    // ≤ 80 chars, one punchy sentence
+  kickoffMs: number,    // ms until the next relevant match kick-off (urgency signal)
+}
+```
+Returning a paragraph of prose with no numeric output is a wrong implementation.
+
+### World Cup Market Scope
+Only these Polymarket market categories are in scope:
+- Match winner / draw (group stage, knockout)
+- Tournament winner per team
+- Top scorer markets
+- "X team eliminated before Y round"
+
+If code is ever tempted to broaden to non-WC markets, that is out of scope for D1-D3.
+
+Repository layout (two independent packages — no monorepo/workspace):
+- `worker/`     Node.js + TypeScript (tsx), 60 s poll loop, writes snapshot.json
+- `web/`        Next.js 15 App Router, Tailwind v4, recharts, deployed to Vercel
+- `contracts/`  Solidity (Remix deploy only, not in any build chain)
+
+Persistence: `snapshot.json` (rolling anomaly feed, max 500 entries) + on-chain events (alerts).
+No database of any kind.
+
+---
+
+## Tech Stack
+- Runtime:       Node.js ≥ 20, TypeScript strict mode, tsx (no compile step)
+- Blockchain:    viem (latest), Sepolia testnet ONLY
+- LLM client:    openai package (OpenAI-compatible), default provider DeepSeek
+- HTTP (worker): axios — respects HTTPS_PROXY env var automatically
+- HTTP (web):    native fetch
+- Frontend:      Next.js 15 App Router, Tailwind CSS v4, recharts
+- No SDK for Polymarket — direct axios calls to https://clob.polymarket.com
+  and https://gamma-api.polymarket.com for market metadata
+
+### World Cup Token IDs (pre-resolved, do not change)
+These are the token IDs for the "Yes" leg of key WC winner markets already confirmed
+live. Add more as needed; never remove entries already in this list.
+```
+# Mexico  (1.55%)
+POLYMARKET_TOKEN_MEXICO=22587775301869146748237913050505932485648958481571808324285560650057390882036
+# Canada  (0.35%)
+POLYMARKET_TOKEN_CANADA=99303605181956827630838461879484468077121754034387765735989859308848389894408
+```
+Fetch full list at runtime via:
+  GET https://gamma-api.polymarket.com/markets?limit=50&active=true&closed=false
+    &order=volume24hr&ascending=false&tag=soccer
+
+---
+
+## Style
+- TypeScript strict everywhere; no `any` without an explanatory comment
+- Explicit return types on all exported functions
+- Error handling: every external call (HTTP / RPC / LLM) must be wrapped in
+  try/catch; retry once, then warn-log and skip — never crash the process
+- Log format: `[module] message` prefix (e.g. `[polymarket]`, `[llm]`, `[index]`)
+  Use `console.warn` for recoverable errors, `console.error` for fatal ones
+- No barrel re-exports; import directly from the source file
+- Prefer `const` and functional patterns; avoid classes unless forced
+- Tailwind v4: use `@import "tailwindcss"` in CSS, no tailwind.config needed
+- Next.js: prefer Server Components; only add `'use client'` where browser APIs
+  or React hooks are strictly required
+- AI output must always be parsed and validated with zod before use downstream;
+  never trust raw LLM JSON without a schema check
+
+---
+
+## Autonomy — Traffic Light System
+
+### GREEN (always safe — do without asking)
+- Read any file, run lint/typecheck, edit TypeScript / CSS / config files
+- Add World Cup market token IDs to the known-tokens list above
+- Improve error handling, retry logic, or logging
+- Update TODO stubs in `llm.ts`, `registry.ts`, `notify.ts`
+
+### YELLOW (make a reasonable choice, but mention it)
+- Change the poll interval or snapshot retention limit
+- Add a new npm dependency
+- Modify the snapshot.json schema (update both worker and web atomically)
+- Add a new dashboard page or API route
+- Change the AI prompt structure (keep evScore + verdict fields required)
+
+### RED — HARD STOPS (never cross without explicit user confirmation)
+1. **No mainnet transactions.** Never sign or broadcast a transaction on any
+   mainnet (Ethereum, Polygon, Base, …). Sepolia only.
+2. **No .env exposure.** Never commit, log, echo, or otherwise leak the contents
+   of .env files or private keys under any circumstances.
+3. **No external key use.** Never call an LLM or RPC endpoint using a key that
+   was not explicitly provided by the user in .env.
+4. **No scope creep.** Do not add non-World-Cup markets or generic signal
+   marketplace features (provider registration, USDC subscriptions, leaderboards)
+   unless the user explicitly re-scopes the project.

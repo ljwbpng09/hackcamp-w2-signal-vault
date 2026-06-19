@@ -1,0 +1,69 @@
+{
+  "market": {
+    "tokenId": "22587775301869146748237913050505932485648958481571808324285560650057390882036",
+    "question": "Will Mexico win the 2026 FIFA World Cup?"
+  },
+  "snapshots": [
+    {
+      "timestamp": "2026-06-19T05:40:08.765Z",
+      "probability": 0.0145
+    },
+    {
+      "timestamp": "2026-06-19T05:41:09.099Z",
+      "probability": 0.0145
+    },
+    {
+      "timestamp": "2026-06-19T05:42:09.124Z",
+      "probability": 0.0145
+    },
+    {
+      "timestamp": "2026-06-19T05:43:09.127Z",
+      "probability": 0.0155
+    },
+    {
+      "timestamp": "2026-06-19T05:44:09.106Z",
+      "probability": 0.0155
+    },
+    {
+      "timestamp": "2026-06-19T05:45:09.152Z",
+      "probability": 0.0155
+    },
+    {
+      "timestamp": "2026-06-19T05:46:09.110Z",
+      "probability": 0.0155
+    },
+    {
+      "timestamp": "2026-06-19T05:47:09.104Z",
+      "probability": 0.0155
+    },
+    {
+      "timestamp": "2026-06-19T05:48:09.139Z",
+      "probability": 0.0155
+    },
+    {
+      "timestamp": "2026-06-19T05:49:09.148Z",
+      "probability": 0.0155
+    },
+    {
+      "timestamp": "2026-06-19T05:50:09.118Z",
+      "probability": 0.0155
+    },
+    {
+      "timestamp": "2026-06-19T05:51:09.144Z",
+      "probability": 0.0155
+    },
+    {
+      "timestamp": "2026-06-19T05:52:09.115Z",
+      "probability": 0.0155
+    },
+    {
+      "timestamp": "2026-06-19T05:53:09.141Z",
+      "probability": 0.0155
+    },
+    {
+      "timestamp": "2026-06-19T05:54:09.155Z",
+      "probability": 0.0155
+    }
+  ],
+  "lastUpdated": "2026-06-19T05:54:09.155Z"
+}

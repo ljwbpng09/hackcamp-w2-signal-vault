@@ -1,0 +1,34 @@
+# ─── Environment variables — NEVER commit ────────────────────────────────────
+.env
+.env.local
+.env.*.local
+# Allow the example file
+!.env.example
+
+# ─── Node ────────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ─── TypeScript build output ─────────────────────────────────────────────────
+dist/
+*.tsbuildinfo
+
+# ─── Next.js ─────────────────────────────────────────────────────────────────
+.next/
+out/
+
+# ─── Vercel ──────────────────────────────────────────────────────────────────
+.vercel
+
+# ─── OS / editor ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
