@@ -5,6 +5,7 @@
  * Switch provider by changing LLM_BASE_URL / LLM_MODEL in .env — no code change needed.
  */
 import OpenAI from 'openai'
+import { withRetry } from './retry.js'
 
 // TODO (D2): Replace placeholder with real implementation.
 // Suggested approach:
@@ -12,6 +13,12 @@ import OpenAI from 'openai'
 //   2. Ask it to identify significant shifts (e.g. >5 pp in 10 min).
 //   3. Return { isAlert: true, reason: "..." } when a shift is detected.
 //   4. Call onAlert() in registry.ts and notify() in notify.ts on positive result.
+//
+// Use withRetry() for the LLM call:
+//   return withRetry(
+//     () => client.chat.completions.create({ ... }),
+//     { label: '[llm]', attempts: 2, baseDelayMs: 1_000, jitterMs: 500 },
+//   )
 
 export interface AlertResult {
   isAlert: boolean
@@ -29,6 +36,7 @@ export async function checkAlert(probabilities: number[]): Promise<AlertResult> 
   // Silence unused-variable lint until D2 implementation
   void probabilities
   void buildClient
+  void withRetry
 
   // TODO (D2): Implement real LLM call, e.g.:
   // const client = buildClient()

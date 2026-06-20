@@ -8,6 +8,7 @@
 // TODO (D4): Implement Telegram push.
 //
 // import axios from 'axios'
+// import { withRetry } from './retry.js'
 //
 // async function doSend(message: string): Promise<void> {
 //   const token = process.env.TELEGRAM_BOT_TOKEN
@@ -24,13 +25,13 @@
  * Send a notification message. Falls back to console.log until D4.
  */
 export async function notify(message: string): Promise<void> {
-  // TODO (D4): Replace with actual Telegram push (with retry):
-  // try {
-  //   await doSend(message)
-  // } catch (err) {
-  //   console.warn('[notify] first send failed, retrying…', err)
-  //   try { await doSend(message) } catch (e) { console.warn('[notify] second send failed, skipping', e) }
-  // }
+  // TODO (D4): Replace placeholder with withRetry():
+  // await withRetry(() => doSend(message), {
+  //   label: '[notify]',
+  //   attempts: 2,
+  //   baseDelayMs: 1_000,
+  //   jitterMs: 300,
+  // })
 
   console.log('[notify] placeholder — implement in D4:', message)
 }
