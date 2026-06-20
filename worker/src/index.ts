@@ -17,9 +17,7 @@ import 'dotenv/config'
 import path from 'path'
 import fs from 'fs/promises'
 import { fetchMarketProbability } from './polymarket.js'
-import { checkAlert } from './llm.js'
-import { onAlert } from './registry.js'
-import { notify } from './notify.js'
+import { alertOnAnomaly, type AlertState } from './alert.js'
 import { withRetry } from './retry.js'
 
 // Allow override for quick local testing: POLL_INTERVAL_MS=10000 npm run dev
@@ -44,6 +42,9 @@ interface SnapshotFile {
 }
 
 const snapshots: SnapshotEntry[] = []
+
+/** Persisted across cycles so the LLM knows when it last fired an alert. */
+let alertState: AlertState = { lastAlertedAt: null }
 
 // ─── Snapshot loader (called once on startup) ─────────────────────────────────
 
@@ -132,32 +133,19 @@ async function doPoll(): Promise<void> {
     // Non-fatal: continue to alert pipeline even if disk write fails.
   }
 
-  // Step 4: LLM alert detection (placeholder until D2).
+  // Step 4: LLM anomaly-alert decision (alertOnAnomaly never throws).
   try {
-    const recentProbs = snapshots.slice(-10).map((s) => s.probability)
-    const alert = await checkAlert(recentProbs)
-    if (alert.isAlert) {
-      const marketId = process.env.POLYMARKET_TOKEN_ID ?? 'unknown'
-
-      // Step 4a: On-chain logging — failure is non-fatal.
-      try {
-        await onAlert(marketId, probability, alert.reason)
-      } catch (err) {
-        console.warn('[index] onAlert (registry) failed', err)
-      }
-
-      // Step 4b: Telegram notification — failure is non-fatal.
-      try {
-        await notify(
-          `🚨 Signal Vault alert — ${process.env.MARKET_QUESTION}\n` +
-            `Prob: ${(probability * 100).toFixed(2)}%\nReason: ${alert.reason}`,
-        )
-      } catch (err) {
-        console.warn('[index] notify failed', err)
-      }
-    }
+    // Use last ~60 readings as the 1-hour price window (60 s interval × 60 = 1 h).
+    const recentPrices = snapshots.slice(-60).map((s) => s.probability)
+    alertState = await alertOnAnomaly(
+      process.env.POLYMARKET_TOKEN_ID ?? '',
+      probability,
+      recentPrices,
+      alertState,
+    )
   } catch (err) {
-    console.warn('[index] LLM alert pipeline error', err)
+    // alertOnAnomaly should never reach here, but guard anyway.
+    console.warn('[index] alert pipeline unexpected error', err)
   }
 }
 
