@@ -9,8 +9,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@types/node-telegram-bot-api": "^0.64.15",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",
+    "node-telegram-bot-api": "^1.1.0",
     "openai": "^4.77.0",
     "viem": "^2.21.54"
   },

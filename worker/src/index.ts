@@ -17,7 +17,9 @@ import 'dotenv/config'
 import path from 'path'
 import fs from 'fs/promises'
 import { fetchMarketProbability } from './polymarket.js'
-import { alertOnAnomaly, type AlertState } from './alert.js'
+import { alertOnAnomaly, type AlertState, pendingPredictions } from './alert.js'
+import { checkSettlements, toAlertRecord, type AlertRecord } from './settler.js'
+import { setupCommands, botState } from './notify.js'
 import { withRetry } from './retry.js'
 
 // Allow override for quick local testing: POLL_INTERVAL_MS=10000 npm run dev
@@ -38,6 +40,8 @@ interface SnapshotEntry {
 interface SnapshotFile {
   market: { tokenId: string; question: string }
   snapshots: SnapshotEntry[]
+  /** AI prediction alerts with on-chain settlement results. */
+  alerts: AlertRecord[]
   lastUpdated: string
 }
 
@@ -85,6 +89,8 @@ async function writeSnapshot(): Promise<void> {
       question: process.env.MARKET_QUESTION ?? 'Unknown market',
     },
     snapshots,
+    // Convert all known predictions (pending + settled) to serialisable records.
+    alerts: pendingPredictions.map(toAlertRecord),
     lastUpdated: new Date().toISOString(),
   }
   const dir = path.dirname(SNAPSHOT_PATH)
@@ -137,15 +143,28 @@ async function doPoll(): Promise<void> {
   try {
     // Use last ~60 readings as the 1-hour price window (60 s interval × 60 = 1 h).
     const recentPrices = snapshots.slice(-60).map((s) => s.probability)
-    alertState = await alertOnAnomaly(
+    const cycleResult = await alertOnAnomaly(
       process.env.POLYMARKET_TOKEN_ID ?? '',
       probability,
       recentPrices,
       alertState,
     )
+    alertState = cycleResult.state
+    botState.totalDecisions++
+    if (cycleResult.triggered) {
+      botState.alertsTriggered++
+      if (cycleResult.txUrl) botState.lastTxUrl = cycleResult.txUrl
+    }
   } catch (err) {
     // alertOnAnomaly should never reach here, but guard anyway.
     console.warn('[index] alert pipeline unexpected error', err)
+  }
+
+  // Step 5: Settle any predictions whose 10-min deadline has passed.
+  try {
+    await checkSettlements(probability)
+  } catch (err) {
+    console.warn('[index] settler unexpected error', err)
   }
 }
 
@@ -171,6 +190,14 @@ async function poll(): Promise<void> {
 async function main(): Promise<void> {
   console.log('[main] ─────────────────────────────────────────')
   console.log('[main] Signal Vault worker starting…')
+
+  // Start Telegram interactive bot (registers /status /snapshot /mute commands).
+  // Errors here are non-fatal — worker continues without bot commands.
+  try {
+    await setupCommands()
+  } catch (err) {
+    console.warn('[main] Telegram setupCommands failed (continuing without bot):', (err as Error).message)
+  }
   console.log(`[main] Market          : ${process.env.MARKET_QUESTION ?? '(set MARKET_QUESTION in .env)'}`)
   console.log(`[main] Token ID        : ${(process.env.POLYMARKET_TOKEN_ID ?? '').slice(0, 12)}…`)
   console.log(`[main] Poll interval   : ${POLL_INTERVAL_MS / 1_000}s`)

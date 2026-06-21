@@ -95,7 +95,16 @@
     {
       "timestamp": "2026-06-20T06:32:32.598Z",
       "probability": 0.0125
+    },
+    {
+      "timestamp": "2026-06-21T10:34:01.837Z",
+      "probability": 0.0135
+    },
+    {
+      "timestamp": "2026-06-21T10:35:04.897Z",
+      "probability": 0.0135
     }
   ],
-  "lastUpdated": "2026-06-20T06:32:32.599Z"
+  "alerts": [],
+  "lastUpdated": "2026-06-21T10:35:04.897Z"
 }

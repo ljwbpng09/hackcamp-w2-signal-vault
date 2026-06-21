@@ -12,7 +12,7 @@
  *   npx tsx src/test-alert.ts
  */
 import 'dotenv/config'
-import { alertOnAnomaly, type AlertState } from './alert.js'
+import { alertOnAnomaly, type AlertState, type AlertCycleResult } from './alert.js'
 
 // ─── Synthetic price series ───────────────────────────────────────────────────
 
@@ -62,12 +62,13 @@ async function main(): Promise<void> {
           : ''),
     )
 
-    state = await alertOnAnomaly(
+    const cycleResult: AlertCycleResult = await alertOnAnomaly(
       process.env.POLYMARKET_TOKEN_ID ?? 'test-token-id',
       price,
       [...rollingHistory],
       state,
     )
+    state = cycleResult.state
 
     console.log() // blank line between rounds
   }
@@ -77,6 +78,8 @@ async function main(): Promise<void> {
   console.log(
     `[test-alert] final state: lastAlertedAt=${state.lastAlertedAt?.toISOString() ?? 'null'}`,
   )
+  // suppress unused import lint
+  void (undefined as unknown as AlertCycleResult)
 }
 
 main().catch((err) => {
