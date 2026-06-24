@@ -36,14 +36,20 @@ outcome live permanently on-chain. Anyone can verify without trusting the operat
 ## Architecture
 
 ```
-Polymarket CLOB API
-      │  axios (60 s)
+Polymarket Gamma API                     Polymarket CLOB API
+      │  (Step 0, every cycle)                 │  (Step 1, per market)
+      │  matchday.ts                           │  axios
+      ▼                                        ▼
+ Auto-detect today's match               fetchMarketProbability(tokenId)
+ "Will X win on YYYY-MM-DD?"
+      │  merge into live market set
       ▼
- worker/src/index.ts
+ worker/src/index.ts  ─────────────► per-market snapshots Map
+      │                                        │
+      ├─[Step 3]─► web/public/snapshot.json ───┘ markets[] schema
+      │             └─► /dashboard (tabs per market, AI Track Record)
       │
-      ├─[Step 3]─► web/public/snapshot.json ──► /dashboard (recharts + alert feed)
-      │
-      ├─[Step 4]─► llm.ts (decide / alertOnAnomaly)
+      ├─[Step 4]─► llm.ts (decide / alertOnAnomaly — per market)
       │                  │  trigger_alert fired
       │                  ▼
       │             registry.ts (viem)
@@ -52,7 +58,7 @@ Polymarket CLOB API
       │             SignalVault.sol on Sepolia  ← PredictionMade event
       │
       └─[Step 5]─► settler.ts (checkSettlements)
-                         │  deadline passed + current price fetched
+                         │  Map<tokenId, price> — per-market prices
                          ▼
                     registry.ts → settlePrediction()
                          │
@@ -63,8 +69,12 @@ Polymarket CLOB API
                     notify.ts → Telegram Bot  ← "✅ CORRECT — Track Record: 73.9%"
 ```
 
-No database. Persistence = `snapshot.json` (rolling 500 price readings + all alert records)
+No database. Persistence = `snapshot.json` (rolling 500 price readings per market + all alert records)
 + on-chain events (immutable prediction lifecycle).
+
+**Two-layer market discovery:**
+- **Static** (`POLYMARKET_MARKETS` in `.env`): tournament winner odds for France, Argentina, Mexico — always monitored, slow-moving, accumulate Track Record over weeks
+- **Dynamic** (Plan B, `matchday.ts`): today's live match markets auto-detected at kick-off, auto-retired on resolution — high volatility, most likely to trigger LLM alerts
 
 ---
 
@@ -195,7 +205,7 @@ curl "https://clob.polymarket.com/markets/<conditionId>" | jq '.tokens[].token_i
 | W3-P1 | ✅ | Dashboard: AI Track Record accuracy stat + on-chain prediction feed |
 | W3-P2 | ✅ | Multi-market monitoring — `POLYMARKET_MARKETS` JSON config, market tab switcher |
 | W3-P3 | ✅ | Telegram Bot: real push notifications for predictions + settlements |
-| W3-P4 | 🔜 | **Plan B — Auto match-day detection**: query Gamma API for today's `"Will X win on YYYY-MM-DD?"` markets, auto-add them to the monitoring list at kick-off, auto-remove after resolution. Enables zero-config live-game tracking throughout the tournament. |
+| W3-P4 | ✅ | **Plan B — Auto match-day detection**: `matchday.ts` queries Gamma API each cycle for today's `"Will X win on YYYY-MM-DD?"` markets, auto-adds them at kick-off, auto-retires on resolution. Zero-config live-game tracking. |
 | W3-P5 | 🔜 | CROO CAP integration: wrap `alertOnAnomaly` as a callable, paid A2A agent endpoint |
 
 ---

@@ -1,11 +1,13 @@
 /**
- * Signal Vault — worker main loop (multi-market)
+ * Signal Vault — worker main loop (multi-market + auto match-day)
  *
- * Reads POLYMARKET_MARKETS (JSON array) from .env to monitor several markets in
- * parallel.  Falls back to the legacy POLYMARKET_TOKEN_ID + MARKET_QUESTION pair
- * for backward compatibility.
+ * Static markets: read from POLYMARKET_MARKETS env var (tournament winner odds).
+ * Dynamic markets (Plan B): every poll cycle, matchday.ts queries the Gamma API
+ *   for today's "Will X win on YYYY-MM-DD?" markets and merges them into the
+ *   live monitoring set. Resolved markets (prob at 0/1) are automatically retired.
  *
  * Every 60 s per market:
+ *   0. Sync match-day markets (add new / retire resolved)
  *   1. Fetch probability from Polymarket CLOB
  *   2. Append to per-market ring buffer
  *   3. Write multi-market snapshot.json
@@ -31,6 +33,7 @@ import { alertOnAnomaly, type AlertState, pendingPredictions } from './alert.js'
 import { checkSettlements, toAlertRecord, type AlertRecord } from './settler.js'
 import { setupCommands, botState } from './notify.js'
 import { withRetry } from './retry.js'
+import { fetchMatchDayMarkets, fetchResolvedMatchDayTokenIds } from './matchday.js'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -105,6 +108,52 @@ const marketAlertState = new Map<string, AlertState>(
   markets.map((m) => [m.tokenId, { lastAlertedAt: null }]),
 )
 
+/** tokenIds that were added automatically by match-day detection (vs. static config). */
+const matchDayTokenIds = new Set<string>()
+
+// ─── Match-day sync ───────────────────────────────────────────────────────────
+
+/**
+ * Called once per poll cycle (Step 0).
+ * - Queries Gamma API for today's live match markets.
+ * - Adds new ones to `markets`, `marketSnapshots`, `marketAlertState`.
+ * - Removes previously auto-added markets that are now resolved.
+ *
+ * Static markets (from POLYMARKET_MARKETS) are never removed.
+ */
+async function syncMatchDayMarkets(): Promise<void> {
+  try {
+    // 1. Discover new match-day markets
+    const discovered = await fetchMatchDayMarkets()
+    for (const m of discovered) {
+      if (markets.some((x) => x.tokenId === m.tokenId)) continue // already tracked
+      markets.push(m)
+      marketSnapshots.set(m.tokenId, [])
+      marketAlertState.set(m.tokenId, { lastAlertedAt: null })
+      matchDayTokenIds.add(m.tokenId)
+      console.log(`[matchday] ➕ added: ${m.question.slice(0, 60)}`)
+    }
+
+    // 2. Retire resolved match-day markets
+    const resolvedQuestions = await fetchResolvedMatchDayTokenIds()
+    for (const tokenId of [...matchDayTokenIds]) {
+      const market = markets.find((x) => x.tokenId === tokenId)
+      if (!market) continue
+      if (resolvedQuestions.has(market.question)) {
+        const idx = markets.indexOf(market)
+        if (idx !== -1) markets.splice(idx, 1)
+        marketSnapshots.delete(tokenId)
+        marketAlertState.delete(tokenId)
+        matchDayTokenIds.delete(tokenId)
+        console.log(`[matchday] ➖ retired: ${market.question.slice(0, 60)}`)
+      }
+    }
+  } catch (err) {
+    // Non-fatal — static markets continue unaffected
+    console.warn('[matchday] syncMatchDayMarkets error:', (err as Error).message)
+  }
+}
+
 // ─── Snapshot loader ──────────────────────────────────────────────────────────
 
 async function loadSnapshot(): Promise<void> {
@@ -170,6 +219,9 @@ async function writeSnapshot(): Promise<void> {
 // ─── Inner poll logic ─────────────────────────────────────────────────────────
 
 async function doPoll(): Promise<void> {
+  // Step 0: Sync today's match-day markets (add new / retire resolved)
+  await syncMatchDayMarkets()
+
   // Collect successful prices for settlement lookup
   const currentPrices = new Map<string, number>()
 
@@ -268,11 +320,12 @@ async function main(): Promise<void> {
     console.warn('[main] Telegram setupCommands failed (continuing without bot):', (err as Error).message)
   }
 
-  console.log(`[main] Monitoring ${markets.length} market(s):`)
+  console.log(`[main] Static markets  : ${markets.length}`)
   for (const m of markets) {
     console.log(`[main]   · ${m.question.slice(0, 60)}`)
     console.log(`[main]     tokenId: ${m.tokenId.slice(0, 16)}…`)
   }
+  console.log(`[main] Match-day auto  : enabled (Gamma API, today's games auto-added)`)
   console.log(`[main] Poll interval   : ${POLL_INTERVAL_MS / 1_000}s`)
   console.log(`[main] Snapshot output : ${SNAPSHOT_PATH}`)
   console.log('[main] ─────────────────────────────────────────')
