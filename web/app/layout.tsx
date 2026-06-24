@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Signal Vault',
-  description: 'AI-powered Polymarket signal monitor with on-chain alert logging',
+  title: 'AI Blackbox',
+  description: 'Commit first. Score later. AI Blackbox seals every prediction on-chain before results, then auto-grades it.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
