@@ -191,10 +191,12 @@ curl "https://clob.polymarket.com/markets/<conditionId>" | jq '.tokens[].token_i
 | W2-D2 | ✅ | LLM alert detection + on-chain anchoring (Sepolia) |
 | W2-D3 | ✅ | `decide()` generic tool-calling engine + `alertOnAnomaly` scenario |
 | W2-D4 | ✅ | Two-step prediction lifecycle: `PredictionMade` + `PredictionSettled` |
-| W3-P0 | 🔜 | Deploy `web/` to Vercel — live public URL |
-| W3-P1 | 🔜 | Dashboard Signal Feed: alert list + AI Track Record accuracy stat |
-| W3-P2 | 🔜 | Multi-market monitoring (3+ World Cup markets) |
-| W3-P3 | 🔜 | Telegram Bot real push: prediction issued → 10-min result |
+| W3-P0 | ✅ | Deploy `web/` to Vercel — live public URL |
+| W3-P1 | ✅ | Dashboard: AI Track Record accuracy stat + on-chain prediction feed |
+| W3-P2 | ✅ | Multi-market monitoring — `POLYMARKET_MARKETS` JSON config, market tab switcher |
+| W3-P3 | ✅ | Telegram Bot: real push notifications for predictions + settlements |
+| W3-P4 | 🔜 | **Plan B — Auto match-day detection**: query Gamma API for today's `"Will X win on YYYY-MM-DD?"` markets, auto-add them to the monitoring list at kick-off, auto-remove after resolution. Enables zero-config live-game tracking throughout the tournament. |
+| W3-P5 | 🔜 | CROO CAP integration: wrap `alertOnAnomaly` as a callable, paid A2A agent endpoint |
 
 ---
 

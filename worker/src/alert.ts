@@ -36,6 +36,8 @@ export interface PendingPrediction {
   localId: string
   /** On-chain prediction ID returned by makePrediction(). null = tx failed. */
   onChainId: bigint | null
+  /** CLOB token ID — needed by settler to match the correct current price. */
+  tokenId: string
   market: string
   probAtAlert: number
   direction: 'UP' | 'DOWN'
@@ -173,6 +175,7 @@ Be terse. One sentence for reason. No narrative padding.`
  * Run one decision cycle for the anomaly-alert scenario.
  *
  * @param tokenId      CLOB token ID of the market being monitored
+ * @param question     Human-readable market question (e.g. "Will France win…")
  * @param currentPrice Latest probability [0, 1]
  * @param recentPrices Last ~60 prices (1 h at 60 s intervals), newest last
  * @param state        Mutable alert state (lastAlertedAt)
@@ -180,6 +183,7 @@ Be terse. One sentence for reason. No narrative padding.`
  */
 export async function alertOnAnomaly(
   tokenId: string,
+  question: string,
   currentPrice: number,
   recentPrices: number[],
   state: AlertState,
@@ -197,7 +201,7 @@ export async function alertOnAnomaly(
   const result = await decide({
     scenario: 'wc-anomaly-alert',
     currentData: {
-      market: process.env.MARKET_QUESTION ?? 'Unknown',
+      market: question,
       tokenId: tokenId.slice(0, 16) + '…',
       currentProbPct: parseFloat((currentPrice * 100).toFixed(3)),
     },
@@ -223,7 +227,7 @@ export async function alertOnAnomaly(
         const alertedAt = new Date()
         const settleAfter = new Date(alertedAt.getTime() + 10 * 60_000)
         const localId = `alert-${++localIdCounter}-${alertedAt.getTime()}`
-        const market = process.env.MARKET_QUESTION ?? 'Unknown'
+        const market = question
 
         // Build payload for on-chain hash + off-chain storage
         const payload = {
@@ -256,6 +260,7 @@ export async function alertOnAnomaly(
         const pending: PendingPrediction = {
           localId,
           onChainId,
+          tokenId,
           market,
           probAtAlert: currentPrice,
           direction,

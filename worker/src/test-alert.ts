@@ -64,6 +64,7 @@ async function main(): Promise<void> {
 
     const cycleResult: AlertCycleResult = await alertOnAnomaly(
       process.env.POLYMARKET_TOKEN_ID ?? 'test-token-id',
+      process.env.MARKET_QUESTION ?? 'Test market',
       price,
       [...rollingHistory],
       state,

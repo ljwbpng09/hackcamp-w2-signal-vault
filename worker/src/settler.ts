@@ -58,11 +58,12 @@ export function toAlertRecord(p: PendingPrediction): AlertRecord {
 
 /**
  * Check all pending predictions. For each one whose deadline has passed,
- * settle it on-chain with the current market price and send a TG result message.
+ * settle it on-chain with the matching market price and send a TG result message.
  *
- * @param currentPrice Latest market probability [0, 1]
+ * @param currentPrices Map of tokenId → latest probability [0, 1] for each monitored market.
+ *                      Predictions whose tokenId is not in the map are skipped this cycle.
  */
-export async function checkSettlements(currentPrice: number): Promise<void> {
+export async function checkSettlements(currentPrices: Map<string, number>): Promise<void> {
   const now = new Date()
 
   const due = pendingPredictions.filter(
@@ -74,16 +75,25 @@ export async function checkSettlements(currentPrice: number): Promise<void> {
   console.log(`[settler] ${due.length} prediction(s) due for settlement`)
 
   for (const prediction of due) {
-    await settle(prediction, currentPrice)
+    const price = currentPrices.get(prediction.tokenId)
+    if (price === undefined) {
+      console.warn(
+        `[settler] no current price for tokenId ${prediction.tokenId.slice(0, 12)}… — skipping this cycle`,
+      )
+      // Un-mark settled so we retry next cycle when price is available
+      prediction.settled = false
+      continue
+    }
+    await settle(prediction, price)
   }
 }
 
 async function settle(p: PendingPrediction, currentPrice: number): Promise<void> {
-  p.settled = true // mark immediately to avoid double-settlement
+  p.settled = true   // mark immediately to prevent double-settlement
   p.probAtSettle = currentPrice
   p.settledAt = new Date()
 
-  // Determine correctness locally (mirrors the contract logic)
+  // Determine correctness locally — mirrors SignalVault.sol logic
   if (p.direction === 'UP') {
     p.correct = currentPrice > p.probAtAlert
   } else {
