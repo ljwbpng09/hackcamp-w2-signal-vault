@@ -206,7 +206,25 @@ curl "https://clob.polymarket.com/markets/<conditionId>" | jq '.tokens[].token_i
 | W3-P2 | ✅ | Multi-market monitoring — `POLYMARKET_MARKETS` JSON config, market tab switcher |
 | W3-P3 | ✅ | Telegram Bot: real push notifications for predictions + settlements |
 | W3-P4 | ✅ | **Plan B — Auto match-day detection**: `matchday.ts` queries Gamma API each cycle for today's `"Will X win on YYYY-MM-DD?"` markets, auto-adds them at kick-off, auto-retires on resolution. Zero-config live-game tracking. |
+| W3-P4b | ✅ | **Telegram `/add` command**: send `/add <tokenId> <question>` in chat to add any Polymarket market to the live monitoring set without restarting the worker |
 | W3-P5 | 🔜 | CROO CAP integration: wrap `alertOnAnomaly` as a callable, paid A2A agent endpoint |
+
+---
+
+## Telegram Bot Commands
+
+| Command | Description |
+|---|---|
+| `/status` | Worker stats — decisions, alerts triggered, last on-chain TX, mute state |
+| `/snapshot` | Latest probability + AI Track Record for every monitored market |
+| `/markets` | List all currently monitored markets |
+| `/add <tokenId> <question>` | **Add a market live** — no restart needed. Takes effect in the next poll cycle (~60 s). Find tokenIds with `curl "https://clob.polymarket.com/markets/<conditionId>" \| jq '.tokens[].token_id'` |
+| `/mute` | Mute push alerts for 1 hour |
+
+Example — add England's World Cup winner market:
+```
+/add <England tokenId> Will England win the 2026 FIFA World Cup?
+```
 
 ---
 

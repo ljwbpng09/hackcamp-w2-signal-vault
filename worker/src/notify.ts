@@ -98,10 +98,33 @@ export async function sendTGAlert(text: string, opts: SendTGAlertOpts = {}): Pro
   }
 }
 
+// ─── /add command — market queue ─────────────────────────────────────────────
+
+/**
+ * Markets queued via the /add Telegram command.
+ * index.ts drains this queue in syncMatchDayMarkets() each cycle.
+ */
+export const pendingMarketQueue: Array<{ tokenId: string; question: string }> = []
+
+// ─── /markets command — live market list callback ─────────────────────────────
+
+type GetMarketsCallback = () => Array<{ tokenId: string; question: string }>
+let _getMarkets: GetMarketsCallback = () => []
+
+/**
+ * Register a callback so the /markets command can list currently monitored markets.
+ * Call from main() after markets are loaded:
+ *   setGetMarketsCallback(() => markets)
+ */
+export function setGetMarketsCallback(fn: GetMarketsCallback): void {
+  _getMarkets = fn
+}
+
 // ─── setupCommands — call once from main() ────────────────────────────────────
 
 /**
- * Start the interactive (polling) bot and register /status /snapshot /mute /help.
+ * Start the interactive (polling) bot.
+ * Commands: /start /help /status /snapshot /markets /add /mute
  * Must be called exactly once. Safe no-op if BOT_TOKEN is missing.
  */
 export async function setupCommands(): Promise<void> {
@@ -118,7 +141,9 @@ export async function setupCommands(): Promise<void> {
   await bot.setMyCommands([
     { command: 'start',    description: 'Start the bot' },
     { command: 'status',   description: 'Show monitoring stats' },
-    { command: 'snapshot', description: 'Latest market snapshot' },
+    { command: 'snapshot', description: 'Latest market snapshot (all markets)' },
+    { command: 'markets',  description: 'List monitored markets' },
+    { command: 'add',      description: 'Add a market: /add <tokenId> <question>' },
     { command: 'mute',     description: 'Mute alerts for 1 hour' },
     { command: 'help',     description: 'Show all commands' },
   ])
@@ -130,46 +155,116 @@ export async function setupCommands(): Promise<void> {
   bot.onText(/\/help/, (msg) => {
     const text = [
       '*Signal Vault — Commands*',
-      '/status   — stats since worker start',
-      '/snapshot — latest price + recent alerts',
-      '/mute     — mute alerts for 1 hour',
+      '/status        — worker stats since startup',
+      '/snapshot      — latest price for all markets',
+      '/markets       — list monitored markets',
+      '/add <id> <q>  — add a market by tokenId + question',
+      '/mute          — mute alerts for 1 hour',
     ].join('\n')
     bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' })
   })
 
   bot.onText(/\/status/, (msg) => {
+    const current = _getMarkets()
     const text = [
-      '*📊 Signal Vault Status*',
-      `Decisions this session: ${botState.totalDecisions}`,
-      `Alerts triggered:       ${botState.alertsTriggered}`,
-      `Last on-chain TX:       ${botState.lastTxUrl || '—'}`,
-      `Muted:                  ${isMuted() ? '🔇 yes' : '🔔 no'}`,
+      '*Signal Vault Status*',
+      `Markets monitored:  ${current.length}`,
+      `Decisions:          ${botState.totalDecisions}`,
+      `Alerts triggered:   ${botState.alertsTriggered}`,
+      `Last on-chain TX:   ${botState.lastTxUrl || '—'}`,
+      `Muted:              ${isMuted() ? '🔇 yes' : '🔔 no'}`,
     ].join('\n')
     bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' })
   })
 
+  // /snapshot — shows latest price + Track Record for every monitored market
   bot.onText(/\/snapshot/, (msg) => {
-    let text = 'No snapshot yet.'
+    let text = 'No snapshot data yet — is the worker running?'
     try {
       const snapshotPath = process.env.SNAPSHOT_OUTPUT_PATH ?? '../web/public/snapshot.json'
       const raw  = readFileSync(snapshotPath, 'utf-8')
       const data = JSON.parse(raw) as {
-        market: { question: string }
-        snapshots: { timestamp: string; probability: number }[]
-        alerts: { reason: string; direction: string; settled: boolean; correct?: boolean }[]
+        markets?: Array<{
+          question: string
+          snapshots: { probability: number }[]
+          alerts: { settled: boolean; correct?: boolean }[]
+        }>
+        // legacy single-market format
+        market?: { question: string }
+        snapshots?: { probability: number }[]
+        alerts?: { settled: boolean; correct?: boolean }[]
       }
-      const latest = data.snapshots.at(-1)
-      const settled = data.alerts.filter((a) => a.settled)
-      const correctCount = settled.filter((a) => a.correct).length
-      const accuracy = settled.length ? `${correctCount}/${settled.length} = ${((correctCount / settled.length) * 100).toFixed(1)}%` : 'n/a'
-      text = [
-        `*${data.market.question}*`,
-        `Latest prob: ${latest ? (latest.probability * 100).toFixed(2) + '%' : '—'}`,
-        `Snapshots:   ${data.snapshots.length}`,
-        `AI Track Record: ${accuracy}`,
-      ].join('\n')
+
+      // Normalise to multi-market format
+      const marketList = data.markets ?? (
+        data.market
+          ? [{ question: data.market.question, snapshots: data.snapshots ?? [], alerts: data.alerts ?? [] }]
+          : []
+      )
+
+      const lines = marketList.map((m) => {
+        const latest = m.snapshots.at(-1)
+        const settled = m.alerts.filter((a) => a.settled)
+        const correct = settled.filter((a) => a.correct).length
+        const acc = settled.length
+          ? `${correct}/${settled.length} = ${((correct / settled.length) * 100).toFixed(0)}%`
+          : 'no settled predictions'
+        return (
+          `*${m.question.slice(0, 50)}*\n` +
+          `Prob: ${latest ? (latest.probability * 100).toFixed(3) + '%' : '—'}  ·  Track Record: ${acc}`
+        )
+      })
+
+      text = lines.length > 0 ? lines.join('\n\n') : 'No markets in snapshot.'
     } catch { /* snapshot not yet written */ }
     bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' })
+  })
+
+  // /markets — list what is currently being monitored
+  bot.onText(/\/markets/, (msg) => {
+    const current = _getMarkets()
+    if (current.length === 0) {
+      bot.sendMessage(msg.chat.id, 'No markets monitored yet.')
+      return
+    }
+    const lines = current.map((m, i) => `${i + 1}. ${m.question.slice(0, 55)}`)
+    bot.sendMessage(
+      msg.chat.id,
+      `*Monitored Markets (${current.length})*\n${lines.join('\n')}`,
+      { parse_mode: 'Markdown' },
+    )
+  })
+
+  // /add <tokenId> <question text>
+  // Example: /add 108233... Will France win the 2026 FIFA World Cup?
+  bot.onText(/\/add (.+)/, (msg, match) => {
+    const parts = (match?.[1] ?? '').trim().split(/\s+/)
+    const tokenId = parts[0] ?? ''
+    const question = parts.slice(1).join(' ')
+
+    if (!tokenId || tokenId.length < 10 || !question) {
+      bot.sendMessage(
+        msg.chat.id,
+        '❌ Usage: `/add <tokenId> <question>`\nExample:\n`/add 10823... Will France win the 2026 FIFA World Cup?`',
+        { parse_mode: 'Markdown' },
+      )
+      return
+    }
+
+    // Check for duplicates
+    const existing = _getMarkets()
+    if (existing.some((m) => m.tokenId === tokenId)) {
+      bot.sendMessage(msg.chat.id, `⚠️ Already monitoring: ${question.slice(0, 50)}`)
+      return
+    }
+
+    pendingMarketQueue.push({ tokenId, question })
+    bot.sendMessage(
+      msg.chat.id,
+      `✅ *Market queued*\n${question.slice(0, 60)}\n\nWill appear in the next poll cycle (~60s).`,
+      { parse_mode: 'Markdown' },
+    )
+    console.log(`[notify] /add queued: ${question.slice(0, 60)} (${tokenId.slice(0, 12)}…)`)
   })
 
   bot.onText(/\/mute/, (msg) => {
@@ -184,5 +279,5 @@ export async function setupCommands(): Promise<void> {
     }
   })
 
-  console.log('[notify] Telegram interactive bot started (polling)')
+  console.log('[notify] Telegram interactive bot started (polling) — /add /markets enabled')
 }

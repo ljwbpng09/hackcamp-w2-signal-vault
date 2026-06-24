@@ -31,7 +31,7 @@ import fs from 'fs/promises'
 import { fetchMarketProbability } from './polymarket.js'
 import { alertOnAnomaly, type AlertState, pendingPredictions } from './alert.js'
 import { checkSettlements, toAlertRecord, type AlertRecord } from './settler.js'
-import { setupCommands, botState } from './notify.js'
+import { setupCommands, botState, pendingMarketQueue, setGetMarketsCallback } from './notify.js'
 import { withRetry } from './retry.js'
 import { fetchMatchDayMarkets, fetchResolvedMatchDayTokenIds } from './matchday.js'
 
@@ -123,6 +123,16 @@ const matchDayTokenIds = new Set<string>()
  */
 async function syncMatchDayMarkets(): Promise<void> {
   try {
+    // 0. Drain markets queued via /add Telegram command
+    while (pendingMarketQueue.length > 0) {
+      const m = pendingMarketQueue.shift()!
+      if (markets.some((x) => x.tokenId === m.tokenId)) continue
+      markets.push(m)
+      marketSnapshots.set(m.tokenId, [])
+      marketAlertState.set(m.tokenId, { lastAlertedAt: null })
+      console.log(`[index] /add applied: ${m.question.slice(0, 60)}`)
+    }
+
     // 1. Discover new match-day markets
     const discovered = await fetchMatchDayMarkets()
     for (const m of discovered) {
@@ -319,6 +329,9 @@ async function main(): Promise<void> {
   } catch (err) {
     console.warn('[main] Telegram setupCommands failed (continuing without bot):', (err as Error).message)
   }
+
+  // Let the /markets and /status commands read the live market list
+  setGetMarketsCallback(() => markets)
 
   console.log(`[main] Static markets  : ${markets.length}`)
   for (const m of markets) {
