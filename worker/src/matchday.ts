@@ -64,7 +64,7 @@ function parseYesProb(raw: string | string[]): number {
  * Fetch the YES token_id for a conditionId from the CLOB API.
  * Returns null if not found or on error.
  */
-async function fetchYesTokenId(conditionId: string): Promise<string | null> {
+export async function fetchYesTokenId(conditionId: string): Promise<string | null> {
   try {
     const res = await axios.get<ClobMarket>(
       `https://clob.polymarket.com/markets/${conditionId}`,
@@ -140,6 +140,49 @@ export async function fetchMatchDayMarkets(): Promise<MarketConfig[]> {
   }
 
   return results
+}
+
+// ─── General market search ────────────────────────────────────────────────────
+
+export interface MarketSearchResult {
+  conditionId: string
+  question: string
+}
+
+/**
+ * Search Gamma API for active Polymarket markets whose question contains
+ * the given query string (case-insensitive).
+ *
+ * Biased towards World Cup / soccer markets but accepts any keyword.
+ * Returns up to `limit` results sorted by 24h volume.
+ */
+export async function searchMarkets(
+  query: string,
+  limit = 5,
+): Promise<MarketSearchResult[]> {
+  let markets: GammaMarket[]
+  try {
+    const res = await axios.get<GammaMarket[]>(
+      `${GAMMA_API}/markets?limit=200&active=true&closed=false&order=volume24hr&ascending=false`,
+      { timeout: 10_000 },
+    )
+    markets = res.data
+  } catch (err) {
+    console.warn('[matchday] searchMarkets API error:', (err as Error).message)
+    return []
+  }
+
+  const lq = query.toLowerCase()
+  return markets
+    .filter((m) => {
+      if (!m.active || m.closed) return false
+      const q = m.question.toLowerCase()
+      if (!q.includes(lq)) return false
+      // Prefer World Cup / soccer context but don't exclude others
+      return true
+    })
+    .slice(0, limit)
+    .map((m) => ({ conditionId: m.conditionId, question: m.question }))
 }
 
 /**

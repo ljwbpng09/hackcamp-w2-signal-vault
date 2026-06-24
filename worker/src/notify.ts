@@ -13,6 +13,7 @@
  */
 import TelegramBot from 'node-telegram-bot-api'
 import { readFileSync } from 'node:fs'
+import { searchMarkets, fetchYesTokenId, type MarketSearchResult } from './matchday.js'
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? ''
 const CHAT_ID   = process.env.TELEGRAM_CHAT_ID   ?? ''
@@ -106,6 +107,13 @@ export async function sendTGAlert(text: string, opts: SendTGAlertOpts = {}): Pro
  */
 export const pendingMarketQueue: Array<{ tokenId: string; question: string }> = []
 
+/**
+ * Stores the last search results per chat so the inline-keyboard callback
+ * can resolve the selection without re-querying the API.
+ * Key: chatId, Value: search results array.
+ */
+const chatSearchResults = new Map<number, MarketSearchResult[]>()
+
 // ─── /markets command — live market list callback ─────────────────────────────
 
 type GetMarketsCallback = () => Array<{ tokenId: string; question: string }>
@@ -143,7 +151,7 @@ export async function setupCommands(): Promise<void> {
     { command: 'status',   description: 'Show monitoring stats' },
     { command: 'snapshot', description: 'Latest market snapshot (all markets)' },
     { command: 'markets',  description: 'List monitored markets' },
-    { command: 'add',      description: 'Add a market: /add <tokenId> <question>' },
+    { command: 'add',      description: 'Add a market: /add <keyword> (e.g. /add france)' },
     { command: 'mute',     description: 'Mute alerts for 1 hour' },
     { command: 'help',     description: 'Show all commands' },
   ])
@@ -235,36 +243,51 @@ export async function setupCommands(): Promise<void> {
     )
   })
 
-  // /add <tokenId> <question text>
-  // Example: /add 108233... Will France win the 2026 FIFA World Cup?
-  bot.onText(/\/add (.+)/, (msg, match) => {
-    const parts = (match?.[1] ?? '').trim().split(/\s+/)
-    const tokenId = parts[0] ?? ''
-    const question = parts.slice(1).join(' ')
+  // /add <keyword>  — search Polymarket and show inline keyboard to pick
+  // e.g. /add france   /add england   /add mexico match
+  bot.onText(/\/add(.*)/, async (msg, match) => {
+    const input = (match?.[1] ?? '').trim()
 
-    if (!tokenId || tokenId.length < 10 || !question) {
+    if (!input) {
       bot.sendMessage(
         msg.chat.id,
-        '❌ Usage: `/add <tokenId> <question>`\nExample:\n`/add 10823... Will France win the 2026 FIFA World Cup?`',
+        '🔍 Usage: `/add <team or keyword>`\nExamples:\n`/add france`\n`/add england`\n`/add mexico match`',
         { parse_mode: 'Markdown' },
       )
       return
     }
 
-    // Check for duplicates
-    const existing = _getMarkets()
-    if (existing.some((m) => m.tokenId === tokenId)) {
-      bot.sendMessage(msg.chat.id, `⚠️ Already monitoring: ${question.slice(0, 50)}`)
+    await bot.sendMessage(msg.chat.id, `🔍 Searching for *${input}*…`, { parse_mode: 'Markdown' })
+
+    let results: MarketSearchResult[]
+    try {
+      results = await searchMarkets(input, 5)
+    } catch {
+      bot.sendMessage(msg.chat.id, '❌ Search failed — Polymarket API unreachable.')
       return
     }
 
-    pendingMarketQueue.push({ tokenId, question })
-    bot.sendMessage(
-      msg.chat.id,
-      `✅ *Market queued*\n${question.slice(0, 60)}\n\nWill appear in the next poll cycle (~60s).`,
-      { parse_mode: 'Markdown' },
-    )
-    console.log(`[notify] /add queued: ${question.slice(0, 60)} (${tokenId.slice(0, 12)}…)`)
+    if (results.length === 0) {
+      bot.sendMessage(
+        msg.chat.id,
+        `No active markets found for *${input}*.\nTry a different keyword.`,
+        { parse_mode: 'Markdown' },
+      )
+      return
+    }
+
+    // Cache results for this chat so the callback can resolve the selection
+    chatSearchResults.set(msg.chat.id, results)
+
+    // Inline keyboard — one button per result
+    // Telegram callback_data limit is 64 bytes, so we use the index only
+    const inline_keyboard = results.map((r, i) => [
+      { text: r.question.slice(0, 55), callback_data: `add_pick:${i}` },
+    ])
+
+    bot.sendMessage(msg.chat.id, 'Tap a market to start monitoring it:', {
+      reply_markup: { inline_keyboard },
+    })
   })
 
   bot.onText(/\/mute/, (msg) => {
@@ -273,9 +296,59 @@ export async function setupCommands(): Promise<void> {
   })
 
   bot.on('callback_query', async (query) => {
+    // Mute button from alert messages
     if (query.data === 'mute_60') {
       muteAlertsFor(60 * 60_000)
       await bot.answerCallbackQuery(query.id, { text: 'Muted for 1 hour ✅' })
+      return
+    }
+
+    // /add market selection
+    if (query.data?.startsWith('add_pick:')) {
+      const chatId = query.message?.chat.id
+      if (!chatId) return
+
+      const idx = parseInt(query.data.split(':')[1] ?? '0', 10)
+      const results = chatSearchResults.get(chatId)
+
+      if (!results || idx >= results.length) {
+        await bot.answerCallbackQuery(query.id, { text: 'Selection expired — run /add again.' })
+        return
+      }
+
+      const selected = results[idx]!
+      await bot.answerCallbackQuery(query.id, { text: 'Resolving tokenId…' })
+
+      // Fetch YES tokenId from CLOB API
+      let tokenId: string | null
+      try {
+        tokenId = await fetchYesTokenId(selected.conditionId)
+      } catch {
+        tokenId = null
+      }
+
+      if (!tokenId) {
+        bot.sendMessage(chatId, `❌ Could not resolve tokenId for:\n${selected.question.slice(0, 60)}\nTry again.`)
+        return
+      }
+
+      // Dedup
+      const existing = _getMarkets()
+      if (existing.some((m) => m.tokenId === tokenId)) {
+        bot.sendMessage(chatId, `⚠️ Already monitoring:\n${selected.question.slice(0, 55)}`)
+        chatSearchResults.delete(chatId)
+        return
+      }
+
+      pendingMarketQueue.push({ tokenId, question: selected.question })
+      chatSearchResults.delete(chatId)
+
+      bot.sendMessage(
+        chatId,
+        `✅ *Market queued*\n${selected.question.slice(0, 60)}\n\nWill appear in the next poll cycle (~60s).`,
+        { parse_mode: 'Markdown' },
+      )
+      console.log(`[notify] /add selected: ${selected.question.slice(0, 60)} (${tokenId.slice(0, 12)}…)`)
     }
   })
 

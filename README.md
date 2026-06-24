@@ -218,13 +218,14 @@ curl "https://clob.polymarket.com/markets/<conditionId>" | jq '.tokens[].token_i
 | `/status` | Worker stats — decisions, alerts triggered, last on-chain TX, mute state |
 | `/snapshot` | Latest probability + AI Track Record for every monitored market |
 | `/markets` | List all currently monitored markets |
-| `/add <tokenId> <question>` | **Add a market live** — no restart needed. Takes effect in the next poll cycle (~60 s). Find tokenIds with `curl "https://clob.polymarket.com/markets/<conditionId>" \| jq '.tokens[].token_id'` |
+| `/add <keyword>` | **Add a market live** — search by team name or keyword, pick from inline results, no restart needed. Takes effect in the next poll cycle (~60 s). |
 | `/mute` | Mute push alerts for 1 hour |
 
 Example — add England's World Cup winner market:
 ```
-/add <England tokenId> Will England win the 2026 FIFA World Cup?
+/add england
 ```
+Bot searches Polymarket, returns matching markets as buttons — tap to confirm. No tokenId needed.
 
 ---
 
