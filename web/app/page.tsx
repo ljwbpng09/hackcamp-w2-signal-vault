@@ -13,25 +13,25 @@ import {
  * Goal: judge understands the project in 10 seconds.
  */
 
-const GITHUB_URL = 'https://github.com/ljwbpng09/hackcamp-w2-signal-vault'
+const GITHUB_URL = 'https://github.com/ljwbpng09/ai-blackbox'
 
 // ── How it works steps ────────────────────────────────────────────────────────
 
 const STEPS = [
   {
     icon: Activity,
-    title: 'Monitor',
-    desc: 'Worker polls Polymarket CLOB every 60 s and tracks real-time probability shifts for World Cup markets.',
+    title: 'Scout',
+    desc: 'Auto-discovers tonight\'s match markets from Polymarket. Add any team instantly with /add england in Telegram.',
   },
   {
     icon: BrainCircuit,
-    title: 'Decide',
-    desc: 'LLM analyses the price history, makes a directional prediction (UP / DOWN), and rates urgency.',
+    title: 'Commit',
+    desc: 'LLM spots a price anomaly and commits UP or DOWN on-chain — sealed before the result, no edits allowed.',
   },
   {
     icon: LinkIcon,
-    title: 'Anchor',
-    desc: 'Prediction is written on-chain via SignalVault.sol before the outcome is known, then auto-settled 10 min later.',
+    title: 'Grade',
+    desc: 'Ten minutes later the system auto-settles against real price data. Right or wrong, it\'s permanent and public.',
   },
 ]
 
@@ -58,28 +58,31 @@ export default function Home() {
 
           {/* Logo placeholder — swap with <img src="/logo.png"> once you have one */}
           <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 text-white text-2xl font-extrabold shadow-lg shadow-indigo-900/50 select-none">
-            SV
+            AB
           </div>
 
           {/* Live badge */}
           <div className="inline-flex items-center gap-2 bg-indigo-950 border border-indigo-800 rounded-full px-4 py-1.5 text-xs text-indigo-300 font-medium">
             <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-            AI × Web3 Hackathon · Week 2
+            AI × Web3 Hackathon · 2026
           </div>
 
           {/* Title */}
           <h1 className="text-2xl font-extrabold tracking-tight leading-tight sm:text-[clamp(2.5rem,6vw,4rem)]">
-            Signal{' '}
+            AI{' '}
             <span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">
-              Vault
+              Blackbox
             </span>
           </h1>
 
-          {/* One-liner */}
-          <p className="text-lg text-slate-400 max-w-2xl leading-relaxed">
-            The AI that puts its predictions{' '}
-            <strong className="text-slate-200">on-chain before the market moves</strong> —
-            a verifiable track record for AI-driven Polymarket signals.
+          {/* Tagline + One-liner */}
+          <p className="text-lg text-slate-300 font-semibold tracking-wide">
+            Commit first. Score later.
+          </p>
+          <p className="text-base text-slate-400 max-w-2xl leading-relaxed -mt-4">
+            Built for live traders and market researchers —{' '}
+            <strong className="text-slate-200">commits each call on-chain before results</strong>{' '}
+            and grades itself ten minutes later.
           </p>
 
           {/* CTA buttons */}
@@ -136,7 +139,7 @@ export default function Home() {
 
           {/* Connector arrows between steps (desktop only) */}
           <p className="text-xs text-slate-700 hidden md:block">
-            poll → detect → predict on-chain → settle → Telegram
+            scout → commit on-chain → auto-grade → Telegram push
           </p>
         </section>
 
@@ -146,12 +149,12 @@ export default function Home() {
             <Bell className="w-5 h-5 text-indigo-400" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-indigo-300 mb-1">Why this is different</p>
+            <p className="text-sm font-semibold text-indigo-300 mb-1">If an AI won't sign first, accuracy means nothing.</p>
             <p className="text-sm text-slate-400 leading-relaxed">
-              Most AI alert tools only log after the fact.{' '}
-              <strong className="text-slate-200">Signal Vault commits the prediction on-chain first</strong>,
-              then auto-settles it 10 minutes later — creating a tamper-proof AI accuracy score
-              anyone can audit on Etherscan without trusting us.
+              Most tools send alerts. Then they rewrite history.{' '}
+              <strong className="text-slate-200">AI Blackbox seals every call on-chain before the result</strong>,
+              then auto-grades it — building a tamper-proof track record
+              anyone can audit on Etherscan without creating an account.
             </p>
           </div>
         </section>
@@ -173,7 +176,7 @@ export default function Home() {
 
         {/* ── Footer ────────────────────────────────────────────────────────── */}
         <footer className="text-xs text-slate-700 text-center">
-          Signal Vault · AI × Web3 Hackathon 2026
+          AI Blackbox · AI × Web3 Hackathon 2026
         </footer>
 
       </div>

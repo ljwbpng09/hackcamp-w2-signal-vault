@@ -1,18 +1,19 @@
-# Signal Vault
+# AI Blackbox
 
-> AI × Web3 hackathon project — 2026 FIFA World Cup Polymarket Signal Specialist
+> Commit first. Score later.
 >
-> Monitors World Cup prediction markets every 60 s. When the AI detects a genuine
-> price anomaly it makes a **directional prediction on-chain**. Ten minutes later
-> the worker settles the prediction with the actual market price — building a
-> tamper-proof, publicly verifiable AI Track Record on Sepolia.
+> Built for live traders and market researchers — **AI Blackbox** acts as a Matchday Scout
+> that auto-discovers tonight's World Cup markets, commits each directional call on-chain
+> before the result, and auto-grades it 10 minutes later.
+> The outcome: a tamper-proof, publicly auditable AI track record on Sepolia.
+> If an AI won't sign first, accuracy means nothing.
 
 ---
 
 ## What makes this different
 
-Most "AI + blockchain" demos anchor a hash and call it done.
-Signal Vault goes one step further:
+Most AI alert tools send signals. Then they rewrite history later.
+**AI Blackbox** does one thing differently — it commits before results:
 
 ```
 AI detects anomaly
@@ -28,8 +29,8 @@ settlePrediction(actualProb=5.80%)                  ← PredictionSettled event 
 Dashboard: AI Track Record = 17/23 = 73.9%  (all verifiable on Etherscan)
 ```
 
-The AI's confidence is **measurable and unforgeable**. Every prediction and its
-outcome live permanently on-chain. Anyone can verify without trusting the operator.
+Every prediction and its outcome live permanently on-chain.
+Anyone can verify without trusting the operator — no account, no sign-in required.
 
 ---
 
@@ -78,7 +79,7 @@ No database. Persistence = `snapshot.json` (rolling 500 price readings per marke
 
 ---
 
-## Smart Contract — SignalVault.sol
+## Smart Contract — SignalVault.sol (the Blackbox)
 
 Two functions, two events:
 
@@ -232,7 +233,7 @@ Bot searches Polymarket, returns matching markets as buttons — tap to confirm.
 ## Deployment
 
 - **Worker**: run locally (`npm run dev` in `worker/`) or on any VPS / Cloud Run.
-- **Web**: `cd web && vercel --prod`
+- **Web (AI Blackbox dashboard)**: `cd web && vercel --prod`
   After each worker run, commit `web/public/snapshot.json` and push to keep Vercel's
   static file up to date.
 - **Contract**: deploy `contracts/SignalVault.sol` on Sepolia via Remix.
@@ -242,9 +243,7 @@ Bot searches Polymarket, returns matching markets as buttons — tap to confirm.
 
 ## Security
 
-- `WALLET_PRIVATE_KEY` is Sepolia **testnet only** — `.cursorrules` and `registry.ts`
-  both enforce this. Never point `SEPOLIA_RPC` at a mainnet endpoint.
+- `WALLET_PRIVATE_KEY` is Sepolia **testnet only**. Never point `SEPOLIA_RPC` at a mainnet endpoint.
 - `.env` is in `.gitignore` and must never be committed.
 - The contract has no `onlyOwner` modifier — any wallet can call `makePrediction()`.
-  For production add access control; for this demo the on-chain ID verifies the
-  reporter address.
+  For production add access control; for this demo the on-chain reporter address is the proof.

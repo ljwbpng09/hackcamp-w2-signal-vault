@@ -326,10 +326,10 @@ export default function Dashboard() {
           <div>
             <h1 className="text-2xl font-bold text-white flex items-center gap-2">
               <Zap className="w-6 h-6 text-indigo-500" />
-              Signal Vault
+              AI Blackbox
             </h1>
             <p className="text-sm text-slate-400 mt-0.5">
-              2026 FIFA World Cup · Polymarket Signal Specialist
+              Commit first. Score later. · 2026 FIFA World Cup
             </p>
             <p className="text-xs text-slate-600 mt-1">
               Monitoring <span className="text-indigo-400 font-medium">{data.markets.length}</span>{' '}

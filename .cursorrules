@@ -1,10 +1,11 @@
-# Signal Vault — Cursor Rules
+# AI Blackbox — Cursor Rules
 
 ## Project Context
-Signal Vault is an AI×Web3 hackathon project (Week 2).
+AI Blackbox (codebase: signal-vault) is an AI×Web3 hackathon project.
 
+**Tagline: Commit first. Score later.**
 **Product direction: 2026 FIFA World Cup Polymarket signal specialist.**
-The product is intentionally narrow — it only tracks Polymarket markets for the
+The product is intentionally narrow — it tracks Polymarket markets for the
 2026 FIFA World Cup (currently the highest-volume event on Polymarket, >$67M/day).
 Do NOT generalize to arbitrary markets unless the user explicitly asks to.
 
@@ -16,6 +17,8 @@ Do NOT generalize to arbitrary markets unless the user explicitly asks to.
    why it likely moved, and whether the current price looks mis-priced
 
 ### Key Differentiator
+AI Blackbox commits a directional prediction on-chain BEFORE outcomes are known,
+then auto-grades it 10 minutes later — building a tamper-proof, publicly auditable track record.
 AI is a **pricing mechanism**, not a prose summary generator.
 Every AI call must return a structured object:
 ```ts
