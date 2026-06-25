@@ -42,45 +42,78 @@ AI 告警工具可以事后声称"我早就知道"——但你从没见过它在
 ### 架构图
 
 ```mermaid
-flowchart TD
-    A["Polymarket Gamma API"] -->|"每轮：检测今日比赛盘"| B["matchday.ts\n自动发现 + 退役市场"]
-    A2["Polymarket CLOB API"] -->|"每60s：拉取价格"| C
-    B -->|"动态加入监控集"| C["index.ts\n主循环"]
-    ENV["POLYMARKET_MARKETS\n静态配置"] -->|"固定市场"| C
-    C --> D["llm.ts\nalertOnAnomaly()"]
-    D -->|"trigger_alert"| E["registry.ts\nviem"]
-    E -->|"makePrediction()"| F[["SignalVault.sol\nSepolia"]]
-    F --> G["PredictionMade event"]
-    C -->|"~10分钟后"| H["settler.ts"]
-    H -->|"settlePrediction()"| F
-    F --> I["PredictionSettled event"]
-    C --> J["snapshot.json"]
-    J --> K["Dashboard\n/dashboard"]
-    I --> L["notify.ts\nTelegram Bot"]
+flowchart TB
+    subgraph offchain["Off-chain · Worker + Web"]
+        direction TB
+        U(["用户 / Telegram\n/add keyword"])
+        ENV[".env\nPOLYMARKET_MARKETS\n静态配置"]
+        MT["matchday.ts\n自动发现今日比赛盘"]
+        PM[/"Polymarket\nCLOB + Gamma API"/]
+        IDX["index.ts\n主循环 · 60 s/市场"]
+        LLM["llm.ts\nalertOnAnomaly()"]
+        SJ[("snapshot.json\n价格历史 + 告警记录")]
+        REG["registry.ts · viem"]
+        DB["Dashboard\nAI Track Record"]
+        TG["Telegram Bot\n推送通知"]
+    end
+
+    subgraph onchain["On-chain · Sepolia"]
+        SC["SignalVault.sol\n0xb894…7191"]
+    end
+
+    U          -->|"/add → 关键词搜索 → 加入队列"| MT
+    ENV        -->|"静态监控市场列表"| IDX
+    MT         -->|"今日比赛盘并入监控集"| IDX
+    PM         -->|"实时概率 · 每 60 s"| IDX
+    IDX        -->|"price history + tokenId"| LLM
+    IDX        -->|"滚动覆写 500 条"| SJ
+    IDX        -->|"~10 min 后触发结算"| REG
+    LLM        -->|"trigger_alert(UP/DOWN, urgency)"| REG
+    SJ         -->|"每 30 s 静态读取"| DB
+    REG        -->|"makePrediction() / settlePrediction()"| SC
+    SC         -->|"PredictionMade / PredictionSettled 事件"| DB
+    SC         -->|"PredictionSettled 事件"| TG
+    TG         -->|"CORRECT/WRONG + Etherscan 链接"| U
 ```
 
 ### 单次预测时序
 
 ```mermaid
 sequenceDiagram
-    participant W as Worker
+    participant Trader as 用户 (Trader)
+    participant Bot as Telegram Bot
+    participant W as Worker (index.ts)
     participant P as Polymarket CLOB
     participant L as LLM
-    participant C as SignalVault.sol
-    participant T as Telegram
+    participant C as SignalVault.sol (Sepolia)
+
+    Trader->>Bot: /add england
+    Bot->>W: pendingMarketQueue.push(England market)
+    Note over W: 下一个 60 s 轮次开始
 
     W->>P: fetchMarketProbability(tokenId)
-    P-->>W: prob = 4.90%
-    W->>L: alertOnAnomaly(snapshots, currentProb)
+    P-->>W: prob = 12.40%
+
+    W->>L: alertOnAnomaly(snapshots[-60:], currentProb=12.40%)
+    L->>L: evaluate(CoT: 连续 3 轮上涨 +4.2 pp，偏离均值 2.1σ)
     L-->>W: trigger_alert(direction=UP, urgency=high)
-    W->>C: makePrediction("UP", 490bps, deadline)
-    C-->>W: PredictionMade(id=7) · tx 0xab12...ef34
-    Note over W,C: ~10 分钟后，同一个 worker 轮次
+
+    W->>C: makePrediction("UP", probBps=1240, deadline=now+10min)
+    C-->>W: emit PredictionMade(id=12) · tx confirmed on Sepolia
+
+    W->>Bot: Alert fired — England UP · prob 12.40% → target 13%+
+    Bot->>Trader: 收到告警推送
+
+    Note over W,C: ~10 分钟后，同一 worker 轮次
+
     W->>P: fetchMarketProbability(tokenId)
-    P-->>W: prob = 5.80%
-    W->>C: settlePrediction(7, 580bps)
-    C-->>W: PredictionSettled(id=7, correct=true)
-    W->>T: CORRECT · Track Record: 18/24 = 75.0%
+    P-->>W: prob = 13.80%
+
+    W->>C: settlePrediction(id=12, actualProbBps=1380)
+    C-->>W: emit PredictionSettled(id=12, correct=true)
+
+    W->>Bot: CORRECT · Track Record: 18/24 = 75.0%
+    Bot->>Trader: 结算通知 + Etherscan 链接（可独立审计）
 ```
 
 > 技术细节：[docs/architecture.md](docs/architecture.md) · 合约接口：[docs/contract.md](docs/contract.md)
