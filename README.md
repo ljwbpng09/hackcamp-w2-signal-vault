@@ -1,270 +1,160 @@
-# AI Blackbox
+# AI Blackbox · 先签字，再计分
 
-> **Commit first. Score later.**
-
-Built for live traders and market researchers — AI Blackbox acts as a Matchday Scout that auto-discovers tonight's World Cup markets, commits each directional call **on-chain before the result**, and auto-grades it 10 minutes later. The outcome: a tamper-proof, publicly auditable AI track record.
-
-**If an AI won't sign first, accuracy means nothing.**
+**AI Blackbox** 在结果前将每次判断封存上链，10 分钟后自动结算，输出任何人都可以独立审计的 AI 预测履历。
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-ai--blackbox.vercel.app-6366f1?style=flat-square)](https://ai-blackbox.vercel.app)
-[![Contract](https://img.shields.io/badge/Contract-Sepolia_Etherscan-3b82f6?style=flat-square)](https://sepolia.etherscan.io/address/0xb894f59EE1531FA17cebb90D6d80E0A0fb597191)
+[![Contract](https://img.shields.io/badge/Contract-Sepolia-3b82f6?style=flat-square)](https://sepolia.etherscan.io/address/0xb894f59EE1531FA17cebb90D6d80E0A0fb597191)
 [![GitHub](https://img.shields.io/badge/GitHub-ai--blackbox-24292e?style=flat-square&logo=github)](https://github.com/ljwbpng09/ai-blackbox)
-[![Hackathon](https://img.shields.io/badge/CROO_Agent_Hackathon-DoraHacks-f97316?style=flat-square)](https://dorahacks.io/hackathon/croo-hackathon/detail)
+[![CROO Hackathon](https://img.shields.io/badge/CROO_Agent_Hackathon-DoraHacks-f97316?style=flat-square)](https://dorahacks.io/hackathon/croo-hackathon/detail)
 
 ---
 
-## Screenshots
+## 1. The Problem & The Solution
+
+### 问题
+
+赛中交易员和盘口研究员面对的不是信息太少，而是信号无法被验证。
+AI 告警工具可以事后声称"我早就知道"——但你从没见过它在结果前的原话。
+没有"先签字"的约束，AI 准确率就是一个可以随时修改的数字。
+
+### 解法
+
+**AI Blackbox** 强制 AI 在结果出来前把判断写进区块链：方向（UP/DOWN）、当前概率、时间戳，一字不能改。
+10 分钟后系统自动拿真实价格结算，更新链上履历。
+评委、用户、其他 Agent 都可以直接去 Etherscan 验证——不需要信任我们。
+
+---
+
+## 2. Demo
 
 | Landing Page | Telegram Bot — 16 markets live |
 |---|---|
 | ![Landing](docs/screenshots/landing.png) | ![Telegram](docs/screenshots/telegram.png) |
 
----
-
-## What makes this different
-
-Most AI alert tools send signals. Then they rewrite history later.
-AI Blackbox does one thing differently — it **commits before results**:
-
-```
-AI detects price anomaly
-      │
-      ▼
-makePrediction(direction="UP", probAtAlert=4.90%)   ← PredictionMade event on Sepolia
-      │
-      │  ~10 minutes later, same worker cycle
-      ▼
-settlePrediction(actualProb=5.80%)                  ← PredictionSettled event on Sepolia
-      │
-      ▼
-Dashboard: AI Track Record updated — all verifiable on Etherscan, no account needed
-```
-
-> Web2 can log. Only a blockchain can **prove** — no trusted operator, no central edit, no takebacks.
+- **Live URL:** [ai-blackbox.vercel.app](https://ai-blackbox.vercel.app)
+- **On-chain contract:** [`0xb894...7191`](https://sepolia.etherscan.io/address/0xb894f59EE1531FA17cebb90D6d80E0A0fb597191) on Sepolia
+- Filter `PredictionMade` + `PredictionSettled` events to audit the AI track record independently.
 
 ---
 
-## Live Contract
+## 3. How it Works
 
-- **SignalVault.sol** deployed on Sepolia:
-  [`0xb894f59EE1531FA17cebb90D6d80E0A0fb597191`](https://sepolia.etherscan.io/address/0xb894f59EE1531FA17cebb90D6d80E0A0fb597191)
-- Filter `PredictionMade` + `PredictionSettled` events to audit the full AI track record independently.
+### 架构图
+
+```mermaid
+flowchart TD
+    A["Polymarket Gamma API"] -->|"每轮：检测今日比赛盘"| B["matchday.ts\n自动发现 + 退役市场"]
+    A2["Polymarket CLOB API"] -->|"每60s：拉取价格"| C
+    B -->|"动态加入监控集"| C["index.ts\n主循环"]
+    ENV["POLYMARKET_MARKETS\n静态配置"] -->|"固定市场"| C
+    C --> D["llm.ts\nalertOnAnomaly()"]
+    D -->|"trigger_alert"| E["registry.ts\nviem"]
+    E -->|"makePrediction()"| F[["SignalVault.sol\nSepolia"]]
+    F --> G["PredictionMade event"]
+    C -->|"~10分钟后"| H["settler.ts"]
+    H -->|"settlePrediction()"| F
+    F --> I["PredictionSettled event"]
+    C --> J["snapshot.json"]
+    J --> K["Dashboard\n/dashboard"]
+    I --> L["notify.ts\nTelegram Bot"]
+```
+
+### 单次预测时序
+
+```mermaid
+sequenceDiagram
+    participant W as Worker
+    participant P as Polymarket CLOB
+    participant L as LLM
+    participant C as SignalVault.sol
+    participant T as Telegram
+
+    W->>P: fetchMarketProbability(tokenId)
+    P-->>W: prob = 4.90%
+    W->>L: alertOnAnomaly(snapshots, currentProb)
+    L-->>W: trigger_alert(direction=UP, urgency=high)
+    W->>C: makePrediction("UP", 490bps, deadline)
+    C-->>W: PredictionMade(id=7) · tx 0xab12...ef34
+    Note over W,C: ~10 分钟后，同一个 worker 轮次
+    W->>P: fetchMarketProbability(tokenId)
+    P-->>W: prob = 5.80%
+    W->>C: settlePrediction(7, 580bps)
+    C-->>W: PredictionSettled(id=7, correct=true)
+    W->>T: CORRECT · Track Record: 18/24 = 75.0%
+```
+
+> 技术细节：[docs/architecture.md](docs/architecture.md) · 合约接口：[docs/contract.md](docs/contract.md)
 
 ---
 
-## Architecture
+## 4. Tech Stack
 
-```
-Polymarket Gamma API                     Polymarket CLOB API
-      │  (every cycle)                        │  (per market)
-      │  matchday.ts                          │  axios
-      ▼                                       ▼
- Auto-detect today's match            fetchMarketProbability(tokenId)
- "Will X win on YYYY-MM-DD?"
-      │  merge into live market set
-      ▼
- worker/src/index.ts  ─────────────► per-market snapshots Map
-      │                                       │
-      ├─► web/public/snapshot.json ───────────┘  markets[] schema
-      │    └─► /dashboard  (tabs per market, AI Track Record)
-      │
-      ├─► llm.ts  alertOnAnomaly()  (per market)
-      │                │  trigger_alert fired
-      │                ▼
-      │           registry.ts (viem)
-      │                │  makePrediction()
-      │                ▼
-      │           SignalVault.sol on Sepolia  ← PredictionMade event
-      │
-      └─► settler.ts  checkSettlements()
-                      │  settlePrediction()
-                      ▼
-               SignalVault.sol            ← PredictionSettled event
-                      │
-                      ▼
-               notify.ts → Telegram Bot  ← "✅ CORRECT · Track Record updated"
-```
-
-**Two-layer market discovery:**
-
-| Layer | Source | Cadence |
+| 技术 | 用途 | Why |
 |---|---|---|
-| Static | `POLYMARKET_MARKETS` in `.env` — tournament winner odds (France, Argentina, …) | Always on; slow-moving; accumulates Track Record over weeks |
-| Dynamic (Plan B) | `matchday.ts` queries Gamma API each cycle for today's `"Will X win on YYYY-MM-DD?"` markets | Auto-added at kick-off; auto-retired on resolution; high volatility |
-
-**Interactive add** — send `/add england` in Telegram; bot searches Polymarket, returns inline buttons; confirmed market appears in the next poll cycle (~60 s). No restart needed.
-
-No database. Persistence = `snapshot.json` (rolling 500 price readings per market + all alert records) + on-chain events (immutable prediction lifecycle).
-
----
-
-## Smart Contract — SignalVault.sol
-
-Two functions, two events. That's the whole blackbox:
-
-| Function | When called | Event emitted |
-|---|---|---|
-| `makePrediction(dataHash, market, direction, probBps, deadline)` | AI triggers alert | `PredictionMade` |
-| `settlePrediction(id, actualProbBps)` | ~10 min later | `PredictionSettled` |
-
-`direction` is `"UP"` or `"DOWN"`. Settlement checks whether actual price moved in the predicted direction. Heavy data (reason, full market name) is stored off-chain in `snapshot.json` and referenced on-chain only via a `keccak256` dataHash — keeping gas low.
+| **Polymarket** CLOB + Gamma API | 价格数据源 + 赛日市场自动发现 | 最大预测市场，2026 世界杯赛季日交易量 >$67M |
+| MiniMax LLM（OpenAI 兼容） | 价格异常检测 + 决策工具调用 | 一行换 `baseURL` 即可切换任意 OpenAI 兼容供应商 |
+| Viem + Sepolia | 链上写入与读取 | 类型安全，无需私钥泄露风险的模拟调用 |
+| SignalVault.sol | 两步预测生命周期 | `makePrediction` → `settlePrediction`，链上状态机 |
+| Next.js 15 App Router | Dashboard + Landing | Server Component 静态读取 snapshot.json，0 后端成本 |
+| Telegram Bot API | 实时推送 + 互动指令 | `/add england` 现场演示，评委可亲手操作 |
+| **CROO CAP**（W3-P5） | A2A 商业化层 | 将 `alertOnAnomaly` 变成可被其他 Agent 付费调用的链上服务 |
 
 ---
 
-## Quick Start
+## 5. Why Now · Why Us
 
-### 1 — Worker
+**Why Now：** 2026 世界杯是 **Polymarket** 有史以来最大的单体事件，市场数量和流动性都在本月峰值。
+赛中盘口波动窗口极短，AI 告警需求真实存在，但"AI 说它很准"没有任何可验证基础。
+链上时间戳 + 不可篡改结算，是目前唯一能消除这个信任缺口的方案。
 
-```bash
-cd worker
-cp .env.example .env
-# Fill in all keys (see table below)
-npm install
-npm run dev
-```
-
-On startup the worker:
-1. Loads any existing `snapshot.json` history back into memory
-2. Calls `syncMatchDayMarkets()` — auto-detects today's live World Cup match markets
-3. Polls every 60 s: fetch probability → run LLM anomaly check → write `PredictionMade` on alert → settle after 10 min → Telegram push
-
-### 2 — Web dashboard
-
-```bash
-cd web
-npm install
-npm run dev   # http://localhost:3000
-```
-
-Dashboard reads `snapshot.json` and auto-refreshes every 30 s.
-
-### 3 — Deploy
-
-```bash
-# Web
-cd web && vercel --prod
-
-# After each worker run, push the snapshot to keep Vercel up-to-date:
-git add web/public/snapshot.json && git commit -m "chore: update snapshot" && git push
-```
+**Why Us：** 我们不是又一个"AI 提醒机器人"。
+**AI Blackbox** 是业内第一个强制 AI 在结果前签字、并用智能合约自动评分的系统。
+Track Record 不由我们维护——它由 Sepolia 上的事件日志维护，任何人可以独立复现。
 
 ---
 
-## Environment Variables (`worker/.env`)
+## 6. Roadmap
 
-| Key | Required | Description |
-|---|---|---|
-| `POLYMARKET_MARKETS` | ✅ | JSON array of markets to monitor statically, e.g. `[{"tokenId":"<id>","question":"Will France win..."}]` |
-| `LLM_API_KEY` | ✅ | API key — works with MiniMax, DeepSeek, OpenAI, or any OpenAI-compatible provider |
-| `LLM_BASE_URL` | ✅ | e.g. `https://api.minimaxi.com/v1` |
-| `LLM_MODEL` | ✅ | e.g. `MiniMax-Text-01` |
-| `SEPOLIA_RPC` | ✅ | Sepolia RPC — public fallback: `https://ethereum-sepolia-rpc.publicnode.com` |
-| `WALLET_PRIVATE_KEY` | ✅ | Sepolia test wallet — **testnet only, never mainnet** |
-| `CONTRACT_ADDRESS` | ✅ | Deployed `SignalVault` address on Sepolia |
-| `TELEGRAM_BOT_TOKEN` | optional | Telegram bot token for push alerts |
-| `TELEGRAM_CHAT_ID` | optional | Target chat/channel ID |
-| `SNAPSHOT_OUTPUT_PATH` | optional | Defaults to `../web/public/snapshot.json` |
-| `POLL_INTERVAL_MS` | optional | Defaults to `60000` (min `10000` for testing) |
+### Done
 
----
-
-## snapshot.json Schema (multi-market)
-
-```jsonc
-{
-  "markets": [
-    {
-      "tokenId": "...",
-      "question": "Will Mexico win the 2026 FIFA World Cup?",
-      "snapshots": [
-        { "timestamp": "2026-06-21T10:00:00Z", "probability": 0.0155 }
-        // ...up to 500 entries per market
-      ],
-      "alerts": [
-        {
-          "localId": "alert-1-...",
-          "onChainId": 3,
-          "market": "Will Mexico win the 2026 FIFA World Cup?",
-          "probAtAlert": 0.049,
-          "direction": "UP",
-          "urgency": "medium",
-          "reason": "Mexico probability spiked 3.4 pp, likely lineup news.",
-          "alertedAt": "2026-06-21T10:05:00Z",
-          "settleAfter": "2026-06-21T10:15:00Z",
-          "settled": true,
-          "probAtSettle": 0.058,
-          "correct": true,
-          "txHashSettle": "0xabc...",
-          "settledAt": "2026-06-21T10:15:42Z"
-        }
-      ]
-    }
-    // ...one entry per monitored market
-  ],
-  "lastUpdated": "2026-06-21T10:15:42Z"
-}
-```
-
----
-
-## Telegram Bot Commands
-
-| Command | Description |
+| 阶段 | 完成内容 |
 |---|---|
-| `/status` | Worker stats — decisions made, alerts triggered, last on-chain TX, mute state |
-| `/snapshot` | Latest probability + AI Track Record for every monitored market |
-| `/markets` | List all currently monitored markets (static + auto-detected) |
-| `/add <keyword>` | **Add a market live** — search by team name, pick from inline buttons, no restart. Active in ~60 s. |
-| `/mute` | Mute push alerts for 1 hour |
+| W2-D1 | Polymarket 轮询、snapshot.json、Dashboard 折线图 |
+| W2-D2 | LLM 异常检测 + 链上锚定（Sepolia） |
+| W2-D3 | `decide()` 通用工具调用引擎 + `alertOnAnomaly` |
+| W2-D4 | 两步预测生命周期：`PredictionMade` + `PredictionSettled` |
+| W3-P0 | Web 部署到 Vercel，公开可访问 |
+| W3-P1 | Dashboard AI Track Record 胜率统计 + 链上预测记录 |
+| W3-P2 | 多市场监控，Dashboard 标签页切换 |
+| W3-P3 | Telegram Bot：预测推送 + 结算通知 |
+| W3-P4 | **Plan B**：`matchday.ts` 每轮自动发现今日比赛盘，零配置 |
+| W3-P4b | Telegram `/add <keyword>`：关键词搜索 + 内联按钮，无需重启 |
 
-```
-# Example — add England's World Cup winner market:
-/add england
-→ Bot searches Polymarket, returns matching markets as buttons
-→ Tap to confirm — no tokenId needed
-```
+### Next 4 weeks
 
----
+- **W3-P5** — CROO CAP 集成：将 `alertOnAnomaly` 包装为可调用、可付费的 A2A Agent 端点，上架 CROO Agent Store
+- 补充 Dashboard 历史预测列表中的 Etherscan 跳转链接，实现一键审计
+- 录制 Demo 视频（≤5 min），满足 CROO 提交要求
 
-## Roadmap
+### 3–6 months
 
-| Phase | Status | Task |
-|---|---|---|
-| W2-D1 | ✅ | Polymarket polling, snapshot.json, dashboard chart |
-| W2-D2 | ✅ | LLM alert detection + on-chain anchoring (Sepolia) |
-| W2-D3 | ✅ | `decide()` generic tool-calling engine + `alertOnAnomaly` |
-| W2-D4 | ✅ | Two-step prediction lifecycle: `PredictionMade` + `PredictionSettled` |
-| W3-P0 | ✅ | Deploy `web/` to Vercel — live public URL |
-| W3-P1 | ✅ | Dashboard: AI Track Record accuracy stat + on-chain prediction feed |
-| W3-P2 | ✅ | Multi-market monitoring — `POLYMARKET_MARKETS` config, market tab switcher |
-| W3-P3 | ✅ | Telegram Bot: real push notifications + settlement results |
-| W3-P4 | ✅ | **Plan B — Auto match-day detection**: `matchday.ts` queries Gamma API each cycle, auto-adds today's match markets, auto-retires on resolution. Zero-config. |
-| W3-P4b | ✅ | **Telegram `/add` command**: keyword search → inline market picker → live monitoring. No restart needed. |
-| W3-P5 | 🔜 | **CROO CAP integration**: wrap `alertOnAnomaly` as a callable, paid A2A agent endpoint on CROO Agent Store |
+- 将 Track Record 作为可查询的 Agent 信誉分，供其他 Agent 在付费前评估信号质量
+- 扩展到世界杯之外的高流动性预测市场（选举、赛事结局）
+- 探索 **CROO** Agent Store 订阅模式：按市场、按赛季计费
 
 ---
 
-## CROO Agent Hackathon
+## 7. Links · Contact · License
 
-Submitted to the [CROO Agent Hackathon](https://dorahacks.io/hackathon/croo-hackathon/detail) on DoraHacks.
+| | |
+|---|---|
+| Live Demo | [ai-blackbox.vercel.app](https://ai-blackbox.vercel.app) |
+| Dashboard | [ai-blackbox.vercel.app/dashboard](https://ai-blackbox.vercel.app/dashboard) |
+| GitHub | [github.com/ljwbpng09/ai-blackbox](https://github.com/ljwbpng09/ai-blackbox) |
+| Contract | [`0xb894...7191`](https://sepolia.etherscan.io/address/0xb894f59EE1531FA17cebb90D6d80E0A0fb597191) on Sepolia |
+| Hackathon | [CROO Agent Hackathon — DoraHacks](https://dorahacks.io/hackathon/croo-hackathon/detail) |
 
-**Tracks:** DeFi / On-chain Ops Agents · Data & Verification Agents
+**License:** MIT — open source, forkable, composable.
 
-**Why AI Blackbox fits CROO:**
-- Every alert is already an on-chain transaction — `makePrediction()` + `settlePrediction()` are native A2A-composable calls
-- The AI track record is the product: other agents can query it to decide whether to trust AI Blackbox's signals before paying for them
-- W3-P5 wraps `alertOnAnomaly` as a CAP-callable endpoint — any agent in the CROO ecosystem can hire AI Blackbox to watch a market and receive a verified, accountable prediction
-
----
-
-## Security
-
-- `WALLET_PRIVATE_KEY` is Sepolia **testnet only**. Never point `SEPOLIA_RPC` at a mainnet endpoint.
-- `.env` is in `.gitignore` and is never committed.
-- `SignalVault.sol` has no `onlyOwner` — any wallet can call `makePrediction()`. For production, add access control. For this demo, the on-chain reporter address is the proof of authorship.
-
----
-
-## License
-
-MIT
+> Security: `WALLET_PRIVATE_KEY` is Sepolia testnet only. `.env` is gitignored and never committed.
+> See [docs/security.md](docs/security.md) for full threat model.
